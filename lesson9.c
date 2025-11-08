@@ -15,6 +15,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#define F_CPU	16000000UL
+
 #include <avr/io.h>
 #include <stdio.h>
 #include <avr/pgmspace.h>
@@ -124,7 +126,7 @@ int main (void)
 	UCSR0B = _BV(RXEN0) | _BV(TXEN0);
 	stdout = &O;
 
-	adc_init(0);
+	adc_init();
 	DDRB = 0xff; /* there are some LEDs connected to PORTB */
 
 	while (1) {

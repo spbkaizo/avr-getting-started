@@ -15,6 +15,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#define F_CPU	16000000UL
+
 #include <avr/io.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>

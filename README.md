@@ -1,108 +1,64 @@
-```   
-/*
- * Copyright (c) 2008-2010 Chris Kuethe <chris.kuethe@gmail.com>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
+# A Brief Tutorial on Programming the AVR without Arduino
 
+## Motivation
+
+Just to get started on the wrong foot: "sometimes Arduino is the wrong choice." Depending on what you're doing, maybe your app's structure isn't very well suited to the Arduino framework. Maybe you need to write smaller code than what would be produced by Arduino, sometimes you just can't run Arduino at all...
+
+I'm in that latter category. I'm not such a big fan of Java, and I'm comfortable with a text editor and driving the compiler by hand, so I'm going to do this the hard way. Arduino trowels some nice plaster over top but it's nothing you can't do by hand. Really, all you should need is `avr-gcc`, `avr-libc`, `avr-binutils` and `avrdude`. Getting these packages is beyond the scope of this document, it's quite likely there are pre-built packages for your OS.
+
+This document was written to give a basic introduction to some of the specifics of AVR programming, assuming you already have a handle on C. It approximates the order I came to understand things while learning to program the AVR. I'm doing a lot of this "the hard way", there are a number of macros in `avr-libc` or `avrlib` to do much of this but it's important to understand the underlying principles. If you understand what's going on, moving your code (from a '168 to a '644P for example) is very easy.
+
+## Table of Contents
+
+1. [A blinking LED - Busy Waits and IO ports](#lesson-1-a-blinking-led---busy-waits-and-io-ports)
+2. [Two blinking LEDs - Addressing Pins](#lesson-2-two-blinking-leds---addressing-pins)
+3. [A switched LED - Digital Input and output](#lesson-3-a-switched-led---digital-input-and-output)
+4. [Serial Output](#lesson-4-serial-output)
+5. [Serial Input](#lesson-5-serial-input)
+6. [Putting it together: printing button presses and controlling LEDs](#lesson-6-putting-it-together-printing-button-presses-and-controlling-leds)
+7. [Analog Output](#lesson-7-analog-output)
+8. [avr-libc goodies](#lesson-8-avr-libc-goodies)
+9. [Analog Input](#lesson-9-analog-input)
+10. [A blinking LED - Interrupts and timers](#lesson-10-a-blinking-led---interrupts-and-timers)
+11. [Persistent Storage](#lesson-11-persistent-storage)
+12. [Input Capture](#lesson-12-input-capture)
+13. [Watchdog](#lesson-13-watchdog)
+14. [I2C/SPI peripherals](#lesson-14-i2cspi-peripherals)
+
+### Platform-Specific Notes
+
+- [ATmega644P-specific](#atmega644p-specific)
+- [ATtiny85-specific](#attiny85-specific)
+- [AT90USB162-specific](#at90usb162-specific)
+
+---
+
+## Lesson 1: A blinking LED - Busy Waits and IO ports
+
+This section is an introduction to microcontrollers. Out of the box, your microcontroller won't do anything - you need to load a program before it's useful. Here I present the the hardware equivalent of "Hello World" - a blinking light.
+
+To begin, let's look at the [pin map](PIN_MAP.md). We see that Arduino pin 13 is PB5 on the ATmega168 - part of port B. To use this pin, port B must first be set to be an output pin. There are various ways to do this - writing to Port B Data Direction Register at address `0x24` or the lazy/better way, using the `DDRB` macro. Let's keep things simple and set the whole port to output with `DDRB = 0xff;`. Finally, we can start writing to `PORTB` (address `0x25`).
+
+A simple approach would would be to do something like this:
+
+```c
+while(1){
+    PORTB = 0xff;
+    _delay_ms(500);
+    PORTB = 0x00;
+    _delay_ms(500);
+}
 ```
 
-A Brief Tutorial on Programming the AVR without Arduino
+which makes use of the delay routines defined in `<util/delay.h>`. If you try run this, you'll find your LED blinking very rapidly. Far more rapidly than you'd like.
 
-   Motivation
+A brief inspection of `delay.h` is instructive: with respect to `_delay_ms`, "The maximal possible delay is 262.14 ms / F_CPU in MHz." This can easily be addressed by computing the maximum time `_delay_ms` will sleep, and given that, the number of times to call `_delay_ms` to achieve the desired delay interval. You may wish to put this computation into a separate function which you can call whenever you need to delay.
 
-      Just to get started on the wrong foot: "sometimes Arduino is the wrong
-      choice." Depending on what you're doing, maybe your app's structure
-      isn't very well suited to the Arduino framework. Maybe you need to
-      write smaller code than what would be produced by Arduino, sometimes
-      you just can't run Arduino at all...
+[lesson1.c](lesson1.c) is one possible solution.
 
-      I'm in that latter category. I'm not such a big fan of Java, and I'm
-      comfortable with a text editor and driving the compiler by hand, so I'm
-      going to do this the hard way. Arduino trowels some nice plaster over
-      top but it's nothing you can't do by hand. Really, all you should need
-      is avr-gcc, avr-libc, avr-binutils and avrdude. Getting these packages
-      is beyond the scope of this document, it's quite likely there are
-      pre-built packages for your OS.
+---
 
-      This document was written give a basic introduction to some of the
-      specifics of AVR programming, assuming you already have a handle on C.
-      It approximates the order I came to understand things while learning to
-      program the AVR. I'm doing a lot of this "the hard way", there are a
-      number of macros in avr-libc or avrlib to do much of this but it's
-      important to understand the underlying principles. If you understand
-      what's going on, moving your code (from a '168 to a '644P for example)
-      is very easy.
-       1. [1]A blinking LED - Busy Waits and IO ports
-       2. [2]Two blinking LEDs - Addressing Pins
-       3. [3]A switched LED - Digital Input and output
-       4. [4]Serial Output
-       5. [5]Serial Input
-       6. [6]Putting it together: printing button presses and controlling
-          LEDs
-       7. [7]Analog Output
-       8. [8]avr-libc goodies
-       9. [9]Analog Input
-      10. [10]A blinking LED - Interrupts and timers
-      11. [11]Persistent Storage
-      12. [12]Input Capture
-      13. [13]Watchdog
-      14. [14]I2C/SPI peripherals
-
-        * [15]ATmega644P-specific
-        * [16]ATtiny85-specific
-        * [17]AT90USB162-specific
-        __________________________________________________________________
-
-   Lesson 1: A blinking LED - Busy Waits and IO ports
-
-      This section is an introduction to microcontrollers. Out of the box,
-      your microcontroller won't do anything - you need to load a program
-      before it's useful. Here I present the the hardware equivalent of
-      "Hello World" - a blinking light.
-
-      To begin, let's look at the [18]pin map. We see that Arduino pin 13 is
-      PB5 on the ATmega168 - part of port B. To use this pin, port B must
-      first be set to be an output pin. There are various ways to do this[2]
-      - writing to Port B Data Direction Register[3] at address 0x24 or the
-      lazy/better way, using the DDRB macro. Let's keep things simple and set
-      the whole port to output with DDRB = 0xff;. Finally, we can start
-      writing to PORTB (address 0x25).
-
-      A simple approach would would be to do something like this:
-   while(1){
-           PORTB = 0xff;
-           _delay_ms(500);
-           PORTB = 0x00;
-           _delay_ms(500);
-   }
-
-      which makes use of the delay routines defined in <util/delay.h>. If you
-      try run this, you'll find your LED blinking very rapidly. Far more
-   rapidly than you'd like.
-
-   A brief inspection of delay.h is instructive: with respect to
-   _delay_ms, "The maximal possible delay is 262.14 ms / F_CPU in MHz."
-   This can easily be addressed by computing the maximum time _delay_ms
-   will sleep, and given that, the number of times to call _delay_ms to
-   achieve the desired delay interval. You may wish to put this
-   computation into a separate function which you can call whenever you
-   need to delay.
-
-   [19]lesson1.c is one possible solution.
-     __________________________________________________________________
-
-Lesson 2: Two blinking LEDs - Addressing Pins
+## Lesson 2: Two blinking LEDs - Addressing Pins
 
    This section builds on the previous section. By now you're probably
    bored of looking at the onboard LED blinking. That's good. Let's try
@@ -460,92 +416,46 @@ AT90USB162-specific
    which is based on the AT90USB162. This section covers some of the
    differences when running on this hardware.
 
-References
+## References
 
-     [1] [32]pin_map.html
+- [Pin Map](PIN_MAP.md)
+- [AVR Instruction Set](http://www.atmel.com/dyn/resources/prod_documents/avr_3_04.pdf)
+- [ATmega168 Datasheet](http://www.atmel.com/dyn/resources/prod_documents/doc2545.pdf)
+- [AVR Basic Code - Atmega168](http://avrbasiccode.wikispaces.com/Atmega168)
+- [Program Arduino with AVR-GCC](http://javiervalcarce.es/wiki/Program_Arduino_with_AVR-GCC)
+- [Ladyada Arduino Tutorial](http://www.ladyada.net/learn/Arduino/)
+- [AVR Library Reference](http://ccrma.stanford.edu/courses/250a/docs/avrlib/html/)
+- [AVR Libc User Manual](http://www.nongnu.org/avr-libc/user-manual/)
+- [Fuse Calculator](http://www.engbedded.com/cgi-bin/fc.cgi)
+- [Piconomic FW Library](http://piconomic.berlios.de/)
+- [Sanguino](http://www.sanguino.cc/)
+- [Teensy](http://www.pjrc.com/teensy/)
+- ... and the rest of atmel's ginormous tech library
 
-     [2] http://www.atmel.com/dyn/resources/prod_documents/avr_3_04.pdf
+## Appendix A: Compiling and Loading Your Code
 
-     [3] http://www.atmel.com/dyn/resources/prod_documents/doc2545.pdf
+### ATmega168 Example
 
-     http://avrbasiccode.wikispaces.com/Atmega168
-
-     http://javiervalcarce.es/wiki/Program_Arduino_with_AVR-GCC
-
-     http://www.ladyada.net/learn/Arduino/
-
-     http://ccrma.stanford.edu/courses/250a/docs/avrlib/html/
-
-     http://www.nongnu.org/avr-libc/user-manual/
-
-     http://www.engbedded.com/cgi-bin/fc.cgi
-
-     http://piconomic.berlios.de/
-
-     http://www.sanguino.cc/
-
-     http://www.pjrc.com/teensy/
-
-     ... and the rest of atmel's ginormous tech library
-
-Appendix A: compiling and loading your code
-
+```bash
 avr-gcc -g -mmcu=atmega168 -c example.c -Wa,-alh,-L -o example.o > example.asm
 avr-gcc -g -mmcu=atmega168 -Wl,-Map,example.map -o example.elf example.o
 avr-objdump -h -S example.elf > example.lst
 avr-objcopy -j .text -j .data -O ihex example.elf example.hex
 avr-size example.elf
 avrdude -b19200 -P /dev/cuaU0 -c avrisp -p m168 -U flash:w:example.hex
+```
 
-avr-gcc -g -mmcu=atmega644p -c blinkprint.c -Wa,-alh,-L -o blinkprint.o > blinkp
-rint.asm
-avr-gcc -g -mmcu=atmega644p -Wl,-Map,blinkprint.map -o blinkprint.elf blinkprint
-.o
+### ATmega644P Example
+
+```bash
+avr-gcc -g -mmcu=atmega644p -c blinkprint.c -Wa,-alh,-L -o blinkprint.o > blinkprint.asm
+avr-gcc -g -mmcu=atmega644p -Wl,-Map,blinkprint.map -o blinkprint.elf blinkprint.o
 avr-objdump -h -S blinkprint.elf > blinkprint.lst
 avr-objcopy -j .text -j .data -O ihex blinkprint.elf blinkprint.hex
 avr-size blinkprint.elf
 avrdude -c usbtiny -p atmega644p -U flash:w:blinkprint.hex
+```
 
-   NB: older versions of GCC may not support newer mcu types like
-   -mmcu=atmega168 or -mmcu=atmega644p. For some of these examples you may
-   be able to use -mmcu=avr5, but things like the serial port won't work
-   correctly or at all without the correct mcu flag. Arduino-0011 uses GCC
-   4.0.4, that should be considered the minimum required version.
+**Note:** Older versions of GCC may not support newer MCU types like `-mmcu=atmega168` or `-mmcu=atmega644p`. For some of these examples you may be able to use `-mmcu=avr5`, but things like the serial port won't work correctly or at all without the correct MCU flag. Arduino-0011 uses GCC 4.0.4, which should be considered the minimum required version.
 
-   Copyright ? 2008,2009 Chris Kuethe <chris.kuethe@gmail.com>
-   $CSK: index.html,v 1.27 2010/01/09 21:54:37 ckuethe Exp $
-
-References
-
-   1. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#blinky1
-   2. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#blinky2
-   3. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#digital-in
-   4. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#usart-out
-   5. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#usart-in
-   6. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#lesson06
-   7. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#pwm-out
-   8. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#avr-libc-goodies
-   9. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#adc-in
-  10. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#blinky3
-  11. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#eeprom
-  12. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#input-capture
-  13. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#watchdog
-  14. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#i2c-spi
-  15. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#atmega644p-only
-  16. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#attiny85-only
-  17. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/index.html#at90usb162-only
-  18. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/pin_map.html
-  19. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson1.c
-  20. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson2.c
-  21. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson3.c
-  22. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson4.c
-  23. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson5.c
-  24. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson6.c
-  25. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson7.c
-  26. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson7b.c
-  27. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson8.c
-  28. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson9.c
-  29. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson10.c
-  30. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson11.c
-  31. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/lesson13.c
-  32. file:///export/backups/kaizo.org.old/htdocs/old/mainframe.cx_tutorial/pin_map.html
+Copyright © 2008-2010 Chris Kuethe <chris.kuethe@gmail.com>
