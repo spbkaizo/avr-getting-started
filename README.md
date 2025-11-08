@@ -10,20 +10,34 @@ This document was written to give a basic introduction to some of the specifics 
 
 ## Table of Contents
 
+### Basic Lessons
+
 1. [A blinking LED - Busy Waits and IO ports](#lesson-1-a-blinking-led---busy-waits-and-io-ports)
 2. [Two blinking LEDs - Addressing Pins](#lesson-2-two-blinking-leds---addressing-pins)
 3. [A switched LED - Digital Input and output](#lesson-3-a-switched-led---digital-input-and-output)
 4. [Serial Output](#lesson-4-serial-output)
 5. [Serial Input](#lesson-5-serial-input)
 6. [Putting it together: printing button presses and controlling LEDs](#lesson-6-putting-it-together-printing-button-presses-and-controlling-leds)
-7. [Analog Output](#lesson-7-analog-output)
+7. [Analog Output (PWM)](#lesson-7-analog-output)
 8. [avr-libc goodies](#lesson-8-avr-libc-goodies)
-9. [Analog Input](#lesson-9-analog-input)
+9. [Analog Input (ADC)](#lesson-9-analog-input)
+
+### Intermediate Lessons
+
 10. [A blinking LED - Interrupts and timers](#lesson-10-a-blinking-led---interrupts-and-timers)
-11. [Persistent Storage](#lesson-11-persistent-storage)
-12. [Input Capture](#lesson-12-input-capture)
-13. [Watchdog](#lesson-13-watchdog)
-14. [I2C/SPI peripherals](#lesson-14-i2cspi-peripherals)
+11. [Persistent Storage (EEPROM)](#lesson-11-persistent-storage)
+12. [Input Capture (Frequency/Pulse Measurement)](#lesson-12-input-capture)
+13. [Watchdog Timer](#lesson-13-watchdog)
+
+### Advanced Lessons
+
+14. [I2C Communication](#lesson-14-i2c-communication)
+15. [SPI Communication](#lesson-15-spi-communication)
+16. [Pin Change and External Interrupts](#lesson-16-pin-change-and-external-interrupts)
+17. [Sleep Modes and Power Management](#lesson-17-sleep-modes-and-power-management)
+18. [Using Multiple Timers Together](#lesson-18-using-multiple-timers-together)
+19. [Interrupt-Driven UART](#lesson-19-interrupt-driven-uart)
+20. [Complete Application - Environmental Monitor](#lesson-20-complete-application---environmental-monitor)
 
 ### Platform-Specific Notes
 
@@ -373,11 +387,119 @@ Lesson 13: Watchdog
    activation.
 
    A short example of using the watchdog timer to wake from a deep sleep
-   mode is found in [31]lesson13.c.
+   mode is found in [lesson13.c](lesson13.c).
 
-Lesson 14: I2C/SPI peripherals
+## Lesson 12: Input Capture
 
-ATmega644P-specific
+One of the useful features of the AVR is the input capture system. An application requiring low latency timestamping (a stopwatch or a PWM detector) could benefit from this. Input capture works by atomically copying the current value of the Timer/Counter Register into the Input Capture Register. The timer continues running and can optionally be reset to zero. Inside the input capture interrupt handler the user code can run without having to take heroic measures to minimize time spent reading the timer or resetting it - this is all done in hardware.
+
+This lesson demonstrates using Timer1's Input Capture feature to measure pulse width and frequency. The ICP1 pin (PB0 on ATmega168) is configured to capture the timer value on rising edges, allowing precise measurement of signal timing.
+
+See [lesson12.c](lesson12.c) for a complete example.
+
+---
+
+## Lesson 14: I2C Communication
+
+I2C (also known as TWI - Two Wire Interface on AVR) is a popular serial communication protocol for connecting sensors, EEPROMs, RTCs, and other peripherals. It uses only two wires (SDA and SCL) plus ground, making it very economical on pin usage.
+
+This lesson covers:
+- Initializing the I2C/TWI hardware
+- Sending START and STOP conditions
+- Writing and reading bytes
+- Scanning the I2C bus for devices
+- Handling ACK/NACK responses
+
+The example includes a bus scanner that detects all connected I2C devices. See [lesson14.c](lesson14.c).
+
+---
+
+## Lesson 15: SPI Communication
+
+SPI (Serial Peripheral Interface) is a high-speed synchronous serial communication protocol commonly used for SD cards, displays, shift registers, and other fast peripherals. Unlike I2C, SPI is full duplex and typically much faster.
+
+This lesson demonstrates:
+- Configuring the AVR as an SPI master
+- Setting clock speed and mode
+- Transferring data to and from SPI devices
+- Using the slave select (SS) pin
+
+The example shows basic SPI communication with loopback testing. See [lesson15.c](lesson15.c).
+
+---
+
+## Lesson 16: Pin Change and External Interrupts
+
+While Timer interrupts are great for periodic tasks, external interrupts allow the AVR to respond immediately to external events like button presses or sensor triggers.
+
+This lesson covers:
+- External interrupts (INT0, INT1) - trigger on rising/falling edges
+- Pin Change interrupts (PCINT) - trigger on any pin state change
+- Configuring interrupt modes
+- Writing efficient interrupt handlers
+
+The example uses external interrupts to count button presses and pin change interrupts to monitor multiple pins simultaneously. See [lesson16.c](lesson16.c).
+
+---
+
+## Lesson 17: Sleep Modes and Power Management
+
+Power consumption is critical for battery-powered applications. The AVR provides several sleep modes to dramatically reduce power usage when the CPU doesn't need to be running.
+
+This lesson explores:
+- Different sleep modes (IDLE, POWER_DOWN, POWER_SAVE, etc.)
+- Waking from sleep via interrupts
+- Disabling unused peripherals to save power
+- Balancing power savings with responsiveness
+
+The example demonstrates both IDLE mode (wakes frequently) and POWER_DOWN mode (deep sleep, minimal power). See [lesson17.c](lesson17.c).
+
+---
+
+## Lesson 18: Using Multiple Timers Together
+
+Most AVR microcontrollers have 2-3 timers (Timer0, Timer1, Timer2), each with different capabilities. This lesson shows how to coordinate multiple timers for complex applications.
+
+The example uses:
+- **Timer0**: 8-bit timer for PWM (LED brightness control)
+- **Timer1**: 16-bit timer in CTC mode for 1Hz heartbeat
+- **Timer2**: 8-bit timer for millisecond counting
+
+Together, these create a `millis()` function (like Arduino) while simultaneously running PWM and maintaining a seconds counter. See [lesson18.c](lesson18.c).
+
+---
+
+## Lesson 19: Interrupt-Driven UART
+
+Earlier serial lessons used blocking (busy-wait) serial I/O, which wastes CPU time. Interrupt-driven UART allows the CPU to do other work while serial transmission and reception happen in the background.
+
+This lesson implements:
+- Circular buffers for TX and RX
+- Non-blocking serial read/write functions
+- UART interrupts (UDRE and RX Complete)
+- Line buffering with editing support (backspace, echo)
+
+The result is a responsive serial interface that doesn't block program execution. See [lesson19.c](lesson19.c).
+
+---
+
+## Lesson 20: Complete Application - Environmental Monitor
+
+This final lesson brings together concepts from all previous lessons into a complete, real-world application: an environmental monitoring system.
+
+Features:
+- **ADC**: Reads temperature from analog sensor every 5 seconds
+- **Timers**: Periodic sampling and PWM for visual feedback
+- **EEPROM**: Stores min/max values and sample count persistently
+- **UART**: Reports measurements via serial
+- **Interrupts**: Button to reset statistics
+- **PWM**: LED brightness indicates current temperature
+
+This demonstrates how to structure a non-trivial embedded application combining multiple subsystems. See [lesson20.c](lesson20.c).
+
+---
+
+## ATmega644P-specific
 
    Most of this document should be applicable to any AVR board. I wrote it
    using a Freeduino SB which has an ATmega168. I'm also running a
